@@ -163,14 +163,18 @@
       align-items: flex-start;
     }
 
-    .hud-top-right { display: flex; gap: 8px; }
-
     .hud-bottom {
       bottom: var(--safe-b);
       left: var(--safe-l);
       right: var(--safe-r);
       justify-content: space-between;
       align-items: flex-end;
+    }
+
+    .hud-bottom-right {
+      display: flex;
+      gap: 8px;
+      align-items: center;
     }
 
     .hud-btn {
@@ -338,15 +342,15 @@
 
     <div class="hud hud-top" id="hud-top">
       <button type="button" class="hud-btn" id="flip-btn">Flip</button>
-      <div class="hud-top-right">
-        <button type="button" class="hud-btn" id="toggle-controls">Controls</button>
-        <button type="button" class="hud-btn icon" id="stop-btn" aria-label="Stop">×</button>
-      </div>
+      <button type="button" class="hud-btn icon" id="stop-btn" aria-label="Stop">×</button>
     </div>
 
     <div class="hud hud-bottom" id="hud-bottom">
       <button type="button" class="hud-btn primary" id="snap-btn">Save</button>
-      <span class="badge" id="facing-badge">rear</span>
+      <div class="hud-bottom-right">
+        <span class="badge" id="facing-badge">rear</span>
+        <button type="button" class="hud-btn" id="toggle-controls">Controls</button>
+      </div>
     </div>
 
     <div class="overlay" id="overlay" aria-hidden="true">
@@ -434,15 +438,12 @@
       var work = document.createElement('canvas');
       var wctx = work.getContext('2d', { willReadFrequently: true });
       var vctx = view.getContext('2d');
-      var gray = null;
 
       var stream = null;
       var facingMode = 'environment';
       var running = false;
       var starting = false;
       var raf = 0;
-      var busy = false;
-      var frameSkip = 0;
 
       function settings() {
         return {
@@ -491,62 +492,49 @@
         if (!isOn) setControlsOpen(false);
       }
 
-      // Fast FS: luminance buffer once, then distribute on floats
-      function ditherGray(data, width, height, opts) {
-        var len = width * height;
-        if (!gray || gray.length !== len) gray = new Float32Array(len);
-
-        var contrast = opts.contrast;
+      // Original Floyd–Steinberg (same as earlier hammercam / dith3r)
+      function ditherImageOnCanvas(ctx, width, height, opts) {
         var threshold = opts.threshold;
+        var contrast = opts.contrast;
         var strength = opts.strength;
+        var imageData = ctx.getImageData(0, 0, width, height);
+        var data = imageData.data;
         var mid = 128;
-        var i, x, y, idx, g, v, err, n;
+        var y, x, idx, oldPixel, newPixel, error;
 
-        for (i = 0; i < len; i++) {
-          idx = i * 4;
-          g = data[idx] * 0.299 + data[idx + 1] * 0.587 + data[idx + 2] * 0.114;
-          g = (g - mid) * contrast + mid;
-          gray[i] = g < 0 ? 0 : g > 255 ? 255 : g;
+        function distribute(dx, dy, factor, baseX, baseY) {
+          var nx = baseX + dx;
+          var ny = baseY + dy;
+          if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+            var nidx = (ny * width + nx) * 4;
+            var n = data[nidx] * 0.299 + data[nidx + 1] * 0.587 + data[nidx + 2] * 0.114 + error * factor;
+            n = n < 0 ? 0 : n > 255 ? 255 : n;
+            data[nidx] = data[nidx + 1] = data[nidx + 2] = n;
+          }
         }
 
         for (y = 0; y < height; y++) {
           for (x = 0; x < width; x++) {
-            i = y * width + x;
-            g = gray[i];
-            v = g < threshold ? 0 : 255;
-            err = (g - v) * strength;
-            gray[i] = v;
+            idx = (y * width + x) * 4;
+            oldPixel = data[idx] * 0.299 + data[idx + 1] * 0.587 + data[idx + 2] * 0.114;
+            oldPixel = (oldPixel - mid) * contrast + mid;
+            oldPixel = oldPixel < 0 ? 0 : oldPixel > 255 ? 255 : oldPixel;
+            newPixel = oldPixel < threshold ? 0 : 255;
+            error = (oldPixel - newPixel) * strength;
+            data[idx] = data[idx + 1] = data[idx + 2] = newPixel;
 
-            if (x + 1 < width) {
-              n = i + 1;
-              gray[n] += err * (7 / 16);
-            }
-            if (y + 1 < height) {
-              if (x > 0) {
-                n = i + width - 1;
-                gray[n] += err * (3 / 16);
-              }
-              n = i + width;
-              gray[n] += err * (5 / 16);
-              if (x + 1 < width) {
-                n = i + width + 1;
-                gray[n] += err * (1 / 16);
-              }
-            }
+            distribute(1, 0, 7 / 16, x, y);
+            distribute(-1, 1, 3 / 16, x, y);
+            distribute(0, 1, 5 / 16, x, y);
+            distribute(1, 1, 1 / 16, x, y);
           }
         }
 
-        for (i = 0; i < len; i++) {
-          v = gray[i] < 128 ? 0 : 255;
-          idx = i * 4;
-          data[idx] = data[idx + 1] = data[idx + 2] = v;
-          data[idx + 3] = 255;
-        }
+        ctx.putImageData(imageData, 0, 0);
       }
 
       function processFrame() {
-        if (!running || busy || video.readyState < 2) return;
-        busy = true;
+        if (!running || video.readyState < 2) return;
 
         try {
           var s = settings();
@@ -554,12 +542,9 @@
           var vw = video.videoWidth || 640;
           var vh = video.videoHeight || 480;
 
-          // Cap process width so iPhone stays smooth; lower pixel = finer within cap
-          var maxW = 240;
-          var w = Math.min(maxW, Math.max(64, Math.round(vw / Math.max(1, scale))));
-          if (scale < 1) {
-            w = Math.min(maxW, Math.max(96, Math.round(maxW * (0.55 + (1 - scale) * 0.45))));
-          }
+          // Fine incremental pixels — original look
+          var maxW = 520;
+          var w = Math.min(maxW, Math.max(1, Math.round(vw / scale)));
           var h = Math.max(1, Math.round(vh * (w / vw)));
 
           if (work.width !== w || work.height !== h) {
@@ -577,28 +562,21 @@
 
           wctx.imageSmoothingEnabled = false;
           wctx.drawImage(video, 0, 0, w, h);
-          var imageData = wctx.getImageData(0, 0, w, h);
-          ditherGray(imageData.data, w, h, s);
-          wctx.putImageData(imageData, 0, 0);
+          ditherImageOnCanvas(wctx, w, h, s);
 
           vctx.imageSmoothingEnabled = false;
           vctx.clearRect(0, 0, outW, outH);
           vctx.drawImage(work, 0, 0, outW, outH);
         } catch (err) {
-          toast('Render error — try lowering pixel detail', true);
+          toast('Render error', true);
           console.error(err);
         }
-
-        busy = false;
       }
 
       function loop() {
         if (!running) return;
-        raf = requestAnimationFrame(loop);
-        if (busy) return;
-        frameSkip ^= 1;
-        if (frameSkip) return; // ~30fps dither on 60Hz displays
         processFrame();
+        raf = requestAnimationFrame(loop);
       }
 
       function stopStreamOnly() {
@@ -703,8 +681,6 @@
           setRunningUi(true);
           startBtn.textContent = 'Start camera';
           toast('Live · ' + (facingMode === 'environment' ? 'rear' : 'front') + ' · Controls for settings');
-          busy = false;
-          frameSkip = 0;
           loop();
 
           if (!wasLive) setControlsOpen(false);
