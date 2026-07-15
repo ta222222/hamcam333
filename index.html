@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>hammercam 3.0</title>
+  <style>
+    :root {
+      --bg: #fafafa;
+      --fg: #0a0a0a;
+      --surface: #ffffff;
+      --surface-2: #f0f0f0;
+      --border: #dcdcdc;
+      --border-strong: #c4c4c4;
+      --muted: #6b6b6b;
+      --muted-light: #9a9a9a;
+      --neon: #c8ff00;
+      --neon-dim: #b8eb00;
+      --neon-soft: color-mix(in srgb, var(--neon) 22%, transparent);
+      --preview-bg: #e8e8e8;
+      --radius: 3px;
+      --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+      --portal-text: 10px;
+      --portal-text-sm: 9px;
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: var(--font-mono);
+      font-size: var(--portal-text);
+      background: var(--bg);
+      color: var(--fg);
+      line-height: 1.5;
+      min-height: 100vh;
+      min-height: 100dvh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .app {
+      max-width: 720px;
+      margin: 0 auto;
+      min-height: 100vh;
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      padding: 12px 12px 20px;
+      gap: 10px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .brand-mark {
+      width: 18px;
+      height: 18px;
+      background: var(--fg);
+      clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
+      flex-shrink: 0;
+    }
+
+    .brand h1 {
+      font: 700 11px/1.2 var(--font-mono);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .brand p {
+      font: var(--portal-text-sm)/1 var(--font-mono);
+      color: var(--muted-light);
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      margin-top: 2px;
+    }
+
+    .head-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .badge {
+      font: 9px/1 var(--font-mono);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      padding: 5px 8px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--muted);
+    }
+
+    .stage {
+      flex: 1;
+      min-height: 280px;
+      background: var(--preview-bg);
+      background-image:
+        linear-gradient(45deg, rgba(0, 0, 0, 0.03) 25%, transparent 25%),
+        linear-gradient(-45deg, rgba(0, 0, 0, 0.03) 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, rgba(0, 0, 0, 0.03) 75%),
+        linear-gradient(-45deg, transparent 75%, rgba(0, 0, 0, 0.03) 75%);
+      background-size: 16px 16px;
+      background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      position: relative;
+    }
+
+    #view {
+      width: 100%;
+      height: 100%;
+      max-height: min(70vh, 640px);
+      object-fit: contain;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      display: block;
+      background: #111;
+    }
+
+    #view.mirrored {
+      transform: scaleX(-1);
+    }
+
+    #video {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .idle {
+      text-align: center;
+      padding: 24px 16px;
+      color: var(--muted);
+    }
+
+    .idle h2 {
+      font: 700 11px/1.2 var(--font-mono);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--fg);
+      margin-bottom: 8px;
+    }
+
+    .idle p {
+      font: var(--portal-text-sm)/1.5 var(--font-mono);
+      color: var(--muted-light);
+      margin-bottom: 14px;
+      max-width: 260px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .btn {
+      font: var(--portal-text)/1.2 var(--font-mono);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      min-height: 32px;
+      padding: 6px 12px;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      color: var(--fg);
+      transition: border-color 0.12s, background 0.12s, color 0.12s;
+    }
+
+    .btn:hover {
+      border-color: var(--border-strong);
+      background: var(--surface-2);
+    }
+
+    .btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .btn-primary {
+      background: var(--neon);
+      border-color: var(--neon-dim);
+      color: var(--fg);
+    }
+
+    .btn-primary:hover {
+      background: var(--neon-dim);
+    }
+
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .rail-label {
+      font: var(--portal-text-sm)/1 var(--font-mono);
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--muted-light);
+    }
+
+    .ctrl {
+      display: grid;
+      grid-template-columns: 5.5rem 1fr 2.6rem;
+      align-items: center;
+      gap: 0.6rem;
+    }
+
+    .ctrl label {
+      font: var(--portal-text-sm)/1 var(--font-mono);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted-light);
+    }
+
+    .ctrl output {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      color: var(--fg);
+      font-size: var(--portal-text-sm);
+    }
+
+    .ctrl input[type="range"] {
+      width: 100%;
+      accent-color: var(--neon-dim);
+    }
+
+    .ctrl select {
+      width: 100%;
+      padding: 6px 8px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--fg);
+      font: var(--portal-text)/1.3 var(--font-mono);
+    }
+
+    .ctrl select:focus {
+      outline: none;
+      border-color: var(--neon-dim);
+      box-shadow: 0 0 0 2px var(--neon-soft);
+    }
+
+    .status {
+      min-height: 1.2em;
+      color: var(--muted);
+      font: var(--portal-text-sm)/1.4 var(--font-mono);
+    }
+
+    .status.error {
+      color: #e04545;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="head-row">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true"></div>
+        <div>
+          <h1>hammercam</h1>
+          <p>3.0 · dither live</p>
+        </div>
+      </div>
+      <span class="badge" id="facing-badge">rear</span>
+    </div>
+
+    <div class="stage" id="stage">
+      <div class="idle" id="idle">
+        <h2>Camera filter</h2>
+        <p>Floyd–Steinberg dither over live camera. Prefer rear lens; flip for front.</p>
+        <button type="button" class="btn btn-primary" id="start-btn">Start</button>
+      </div>
+      <video id="video" playsinline muted autoplay></video>
+      <canvas id="view" class="hidden" aria-label="dithered camera"></canvas>
+    </div>
+
+    <div class="toolbar">
+      <button type="button" class="btn btn-primary" id="stop-btn" disabled>Stop</button>
+      <button type="button" class="btn" id="flip-btn" disabled>Flip cam</button>
+      <button type="button" class="btn" id="snap-btn" disabled>Snap png</button>
+      <button type="button" class="btn" id="reset-btn">Reset</button>
+    </div>
+
+    <div class="panel">
+      <p class="rail-label">Output</p>
+      <div class="ctrl">
+        <label for="preset">Preset</label>
+        <select id="preset">
+          <option value="">—</option>
+          <option value="default">Default</option>
+          <option value="v1">V1 G00D</option>
+          <option value="soft">Soft</option>
+          <option value="hard">Hard</option>
+        </select>
+        <span></span>
+      </div>
+      <div class="ctrl">
+        <label for="pixel">Pixel</label>
+        <input type="range" id="pixel" min="0.25" max="3" step="0.05" value="0.75">
+        <output id="pixel-val" for="pixel">0.75</output>
+      </div>
+      <div class="ctrl">
+        <label for="threshold">Threshold</label>
+        <input type="range" id="threshold" min="40" max="215" step="1" value="128">
+        <output id="threshold-val" for="threshold">128</output>
+      </div>
+      <div class="ctrl">
+        <label for="contrast">Contrast</label>
+        <input type="range" id="contrast" min="0.5" max="3" step="0.05" value="1.2">
+        <output id="contrast-val" for="contrast">1.20</output>
+      </div>
+      <div class="ctrl">
+        <label for="strength">Strength</label>
+        <input type="range" id="strength" min="0" max="2" step="0.05" value="1">
+        <output id="strength-val" for="strength">1.00</output>
+      </div>
+    </div>
+
+    <p class="status" id="status">Ready — tap Start for camera access.</p>
+  </div>
+
+  <script>
+    const presets = {
+      default: { pixel: 0.75, threshold: 128, contrast: 1.2, strength: 1 },
+      v1: { pixel: 0.35, threshold: 40, contrast: 2.25, strength: 0.65 },
+      soft: { pixel: 1.25, threshold: 140, contrast: 0.9, strength: 0.75 },
+      hard: { pixel: 0.9, threshold: 100, contrast: 2.0, strength: 1.25 }
+    };
+
+    const video = document.getElementById('video');
+    const view = document.getElementById('view');
+    const idle = document.getElementById('idle');
+    const statusEl = document.getElementById('status');
+    const facingBadge = document.getElementById('facing-badge');
+    const startBtn = document.getElementById('start-btn');
+    const stopBtn = document.getElementById('stop-btn');
+    const flipBtn = document.getElementById('flip-btn');
+    const snapBtn = document.getElementById('snap-btn');
+    const resetBtn = document.getElementById('reset-btn');
+    const presetEl = document.getElementById('preset');
+    const pixelEl = document.getElementById('pixel');
+    const thresholdEl = document.getElementById('threshold');
+    const contrastEl = document.getElementById('contrast');
+    const strengthEl = document.getElementById('strength');
+    const pixelVal = document.getElementById('pixel-val');
+    const thresholdVal = document.getElementById('threshold-val');
+    const contrastVal = document.getElementById('contrast-val');
+    const strengthVal = document.getElementById('strength-val');
+
+    const work = document.createElement('canvas');
+    const wctx = work.getContext('2d', { willReadFrequently: true });
+    const vctx = view.getContext('2d');
+
+    let stream = null;
+    let facingMode = 'environment';
+    let running = false;
+    let raf = 0;
+
+    function settings() {
+      return {
+        pixel: +pixelEl.value,
+        threshold: +thresholdEl.value,
+        contrast: +contrastEl.value,
+        strength: +strengthEl.value
+      };
+    }
+
+    function syncLabels() {
+      const s = settings();
+      pixelVal.textContent = s.pixel.toFixed(2);
+      thresholdVal.textContent = s.threshold;
+      contrastVal.textContent = s.contrast.toFixed(2);
+      strengthVal.textContent = s.strength.toFixed(2);
+    }
+
+    function setStatus(msg, isError) {
+      statusEl.textContent = msg;
+      statusEl.classList.toggle('error', !!isError);
+    }
+
+    function applySettings(s) {
+      pixelEl.value = s.pixel;
+      thresholdEl.value = s.threshold;
+      contrastEl.value = s.contrast;
+      strengthEl.value = s.strength;
+      syncLabels();
+    }
+
+    function ditherImageOnCanvas(ctx, width, height, opts) {
+      const threshold = opts.threshold;
+      const contrast = opts.contrast;
+      const strength = opts.strength;
+      const imageData = ctx.getImageData(0, 0, width, height);
+      const data = imageData.data;
+      const mid = 128;
+
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const idx = (y * width + x) * 4;
+          let oldPixel = data[idx] * 0.299 + data[idx + 1] * 0.587 + data[idx + 2] * 0.114;
+          oldPixel = (oldPixel - mid) * contrast + mid;
+          oldPixel = oldPixel < 0 ? 0 : oldPixel > 255 ? 255 : oldPixel;
+          const newPixel = oldPixel < threshold ? 0 : 255;
+          const error = (oldPixel - newPixel) * strength;
+          data[idx] = data[idx + 1] = data[idx + 2] = newPixel;
+
+          function distribute(dx, dy, factor) {
+            const nx = x + dx;
+            const ny = y + dy;
+            if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+              const nidx = (ny * width + nx) * 4;
+              let n = data[nidx] * 0.299 + data[nidx + 1] * 0.587 + data[nidx + 2] * 0.114 + error * factor;
+              n = n < 0 ? 0 : n > 255 ? 255 : n;
+              data[nidx] = data[nidx + 1] = data[nidx + 2] = n;
+            }
+          }
+
+          distribute(1, 0, 7 / 16);
+          distribute(-1, 1, 3 / 16);
+          distribute(0, 1, 5 / 16);
+          distribute(1, 1, 1 / 16);
+        }
+      }
+
+      ctx.putImageData(imageData, 0, 0);
+    }
+
+    function syncFacingUi() {
+      const rear = facingMode === 'environment';
+      facingBadge.textContent = rear ? 'rear' : 'front';
+      view.classList.toggle('mirrored', !rear);
+    }
+
+    function setRunningUi(isOn) {
+      idle.classList.toggle('hidden', isOn);
+      view.classList.toggle('hidden', !isOn);
+      stopBtn.disabled = !isOn;
+      flipBtn.disabled = !isOn;
+      snapBtn.disabled = !isOn;
+      startBtn.disabled = isOn;
+    }
+
+    async function startCamera() {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setStatus('Camera API unavailable in this browser.', true);
+        return;
+      }
+
+      stopStream();
+      setStatus('Requesting camera…');
+
+      const constraints = {
+        audio: false,
+        video: {
+          facingMode: { ideal: facingMode },
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        }
+      };
+
+      try {
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+      } catch (err) {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: false,
+            video: true
+          });
+        } catch (err2) {
+          setStatus('Camera permission denied or unavailable.', true);
+          setRunningUi(false);
+          return;
+        }
+      }
+
+      video.srcObject = stream;
+      try {
+        await video.play();
+      } catch (e) {
+        setStatus('Could not play camera stream.', true);
+        stopStream();
+        return;
+      }
+
+      running = true;
+      syncFacingUi();
+      setRunningUi(true);
+      setStatus('Live · ' + (facingMode === 'environment' ? 'rear' : 'front') + ' · adjust output below');
+      loop();
+    }
+
+    function stopStream() {
+      running = false;
+      if (raf) {
+        cancelAnimationFrame(raf);
+        raf = 0;
+      }
+      if (stream) {
+        stream.getTracks().forEach(function (t) { t.stop(); });
+        stream = null;
+      }
+      video.srcObject = null;
+    }
+
+    function stopCamera() {
+      stopStream();
+      setRunningUi(false);
+      setStatus('Stopped.');
+    }
+
+    async function flipCamera() {
+      facingMode = facingMode === 'environment' ? 'user' : 'environment';
+      syncFacingUi();
+      if (running) await startCamera();
+    }
+
+    function processFrame() {
+      if (!running || video.readyState < 2) return;
+
+      const s = settings();
+      const scale = Math.max(0.25, s.pixel);
+      const vw = video.videoWidth || 640;
+      const vh = video.videoHeight || 480;
+
+      // Smaller pixel → more samples (finer). Cap for mobile FPS.
+      const maxW = 520;
+      const w = Math.min(maxW, Math.max(1, Math.round(vw / scale)));
+      const h = Math.max(1, Math.round(vh * (w / vw)));
+
+      if (work.width !== w || work.height !== h) {
+        work.width = w;
+        work.height = h;
+      }
+
+      // Keep display ≥1× so sub-1.0 pixel stays fine (not a shrunk canvas)
+      const chunk = Math.max(1, Math.round(scale));
+      const outW = w * chunk;
+      const outH = h * chunk;
+      if (view.width !== outW || view.height !== outH) {
+        view.width = outW;
+        view.height = outH;
+      }
+
+      wctx.imageSmoothingEnabled = false;
+      wctx.drawImage(video, 0, 0, w, h);
+      ditherImageOnCanvas(wctx, w, h, s);
+
+      vctx.imageSmoothingEnabled = false;
+      vctx.clearRect(0, 0, outW, outH);
+      vctx.drawImage(work, 0, 0, outW, outH);
+    }
+
+    function loop() {
+      if (!running) return;
+      processFrame();
+      raf = requestAnimationFrame(loop);
+    }
+
+    function snap() {
+      if (!running || !view.width) return;
+      const a = document.createElement('a');
+      a.href = view.toDataURL('image/png');
+      a.download = 'hammercam-3.png';
+      a.click();
+      setStatus('Saved hammercam-3.png');
+    }
+
+    [pixelEl, thresholdEl, contrastEl, strengthEl].forEach(function (el) {
+      el.addEventListener('input', function () {
+        presetEl.value = '';
+        syncLabels();
+      });
+    });
+
+    presetEl.addEventListener('change', function () {
+      const key = presetEl.value;
+      if (key && presets[key]) applySettings(presets[key]);
+    });
+
+    startBtn.addEventListener('click', startCamera);
+    stopBtn.addEventListener('click', stopCamera);
+    flipBtn.addEventListener('click', flipCamera);
+    snapBtn.addEventListener('click', snap);
+    resetBtn.addEventListener('click', function () {
+      presetEl.value = 'default';
+      applySettings(presets.default);
+      setStatus(running ? 'Reset to default output.' : 'Ready — tap Start for camera access.');
+    });
+
+    applySettings(presets.default);
+    presetEl.value = 'default';
+    setRunningUi(false);
+  </script>
+</body>
+</html>
