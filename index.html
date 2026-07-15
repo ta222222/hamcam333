@@ -220,7 +220,8 @@
       position: absolute;
       z-index: 12;
       left: 50%;
-      bottom: calc(var(--safe-b) + 58px);
+      top: calc(var(--safe-t) + 52px);
+      bottom: auto;
       transform: translateX(-50%);
       max-width: min(90vw, 360px);
       padding: 8px 12px;
@@ -436,14 +437,19 @@
       var strengthVal = document.getElementById('strength-val');
 
       var work = document.createElement('canvas');
-      var wctx = work.getContext('2d', { willReadFrequently: true });
-      var vctx = view.getContext('2d');
+      var wctx = work.getContext('2d', { willReadFrequently: true, alpha: false });
+      var vctx = view.getContext('2d', { alpha: false });
+      var gray = null;
 
       var stream = null;
       var facingMode = 'environment';
       var running = false;
       var starting = false;
       var raf = 0;
+      var processing = false;
+      var adaptiveMaxW = 360;
+      var lockedKey = '';
+      var lastPixel = -1;
 
       function settings() {
         return {
@@ -492,49 +498,52 @@
         if (!isOn) setControlsOpen(false);
       }
 
-      // Original Floyd–Steinberg (same as earlier hammercam / dith3r)
-      function ditherImageOnCanvas(ctx, width, height, opts) {
-        var threshold = opts.threshold;
-        var contrast = opts.contrast;
-        var strength = opts.strength;
-        var imageData = ctx.getImageData(0, 0, width, height);
-        var data = imageData.data;
-        var mid = 128;
-        var y, x, idx, oldPixel, newPixel, error;
+      // Fast FS on luminance buffer — same look, smoother on iPhone
+      function ditherGray(data, width, height, opts) {
+        var len = width * height;
+        if (!gray || gray.length !== len) gray = new Float32Array(len);
 
-        function distribute(dx, dy, factor, baseX, baseY) {
-          var nx = baseX + dx;
-          var ny = baseY + dy;
-          if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-            var nidx = (ny * width + nx) * 4;
-            var n = data[nidx] * 0.299 + data[nidx + 1] * 0.587 + data[nidx + 2] * 0.114 + error * factor;
-            n = n < 0 ? 0 : n > 255 ? 255 : n;
-            data[nidx] = data[nidx + 1] = data[nidx + 2] = n;
-          }
+        var contrast = opts.contrast;
+        var threshold = opts.threshold;
+        var strength = opts.strength;
+        var mid = 128;
+        var i, x, y, idx, g, v, err, n;
+
+        for (i = 0; i < len; i++) {
+          idx = i * 4;
+          g = data[idx] * 0.299 + data[idx + 1] * 0.587 + data[idx + 2] * 0.114;
+          g = (g - mid) * contrast + mid;
+          gray[i] = g < 0 ? 0 : g > 255 ? 255 : g;
         }
 
         for (y = 0; y < height; y++) {
           for (x = 0; x < width; x++) {
-            idx = (y * width + x) * 4;
-            oldPixel = data[idx] * 0.299 + data[idx + 1] * 0.587 + data[idx + 2] * 0.114;
-            oldPixel = (oldPixel - mid) * contrast + mid;
-            oldPixel = oldPixel < 0 ? 0 : oldPixel > 255 ? 255 : oldPixel;
-            newPixel = oldPixel < threshold ? 0 : 255;
-            error = (oldPixel - newPixel) * strength;
-            data[idx] = data[idx + 1] = data[idx + 2] = newPixel;
+            i = y * width + x;
+            g = gray[i];
+            v = g < threshold ? 0 : 255;
+            err = (g - v) * strength;
+            gray[i] = v;
 
-            distribute(1, 0, 7 / 16, x, y);
-            distribute(-1, 1, 3 / 16, x, y);
-            distribute(0, 1, 5 / 16, x, y);
-            distribute(1, 1, 1 / 16, x, y);
+            if (x + 1 < width) gray[i + 1] += err * (7 / 16);
+            if (y + 1 < height) {
+              if (x > 0) gray[i + width - 1] += err * (3 / 16);
+              gray[i + width] += err * (5 / 16);
+              if (x + 1 < width) gray[i + width + 1] += err * (1 / 16);
+            }
           }
         }
 
-        ctx.putImageData(imageData, 0, 0);
+        for (i = 0; i < len; i++) {
+          v = gray[i] < 128 ? 0 : 255;
+          idx = i * 4;
+          data[idx] = data[idx + 1] = data[idx + 2] = v;
+        }
       }
 
       function processFrame() {
         if (!running || video.readyState < 2) return;
+
+        var t0 = performance.now();
 
         try {
           var s = settings();
@@ -542,41 +551,62 @@
           var vw = video.videoWidth || 640;
           var vh = video.videoHeight || 480;
 
-          // Fine incremental pixels — original look
-          var maxW = 520;
-          var w = Math.min(maxW, Math.max(1, Math.round(vw / scale)));
-          var h = Math.max(1, Math.round(vh * (w / vw)));
-
-          if (work.width !== w || work.height !== h) {
-            work.width = w;
-            work.height = h;
+          if (s.pixel !== lastPixel) {
+            lastPixel = s.pixel;
+            adaptiveMaxW = 360;
+            lockedKey = '';
           }
 
+          // Fine look with adaptive cap so Pro Max stays fluid
+          var maxW = Math.min(480, Math.max(220, adaptiveMaxW | 0));
+          var w = Math.min(maxW, Math.max(1, Math.round(vw / scale)));
+          var h = Math.max(1, Math.round(vh * (w / vw)));
           var chunk = Math.max(1, Math.round(scale));
           var outW = w * chunk;
           var outH = h * chunk;
-          if (view.width !== outW || view.height !== outH) {
-            view.width = outW;
-            view.height = outH;
+          var key = w + 'x' + h + ':' + outW + 'x' + outH;
+
+          // Only resize when size actually changes — resizing clears canvas (flicker/freeze feel)
+          if (key !== lockedKey) {
+            lockedKey = key;
+            if (work.width !== w || work.height !== h) {
+              work.width = w;
+              work.height = h;
+            }
+            if (view.width !== outW || view.height !== outH) {
+              view.width = outW;
+              view.height = outH;
+            }
           }
 
           wctx.imageSmoothingEnabled = false;
           wctx.drawImage(video, 0, 0, w, h);
-          ditherImageOnCanvas(wctx, w, h, s);
+          var imageData = wctx.getImageData(0, 0, w, h);
+          ditherGray(imageData.data, w, h, s);
+          wctx.putImageData(imageData, 0, 0);
 
           vctx.imageSmoothingEnabled = false;
-          vctx.clearRect(0, 0, outW, outH);
           vctx.drawImage(work, 0, 0, outW, outH);
         } catch (err) {
           toast('Render error', true);
           console.error(err);
         }
+
+        var dt = performance.now() - t0;
+        if (dt > 26) adaptiveMaxW = Math.max(220, adaptiveMaxW - 30);
+        else if (dt < 12) adaptiveMaxW = Math.min(480, adaptiveMaxW + 16);
       }
 
       function loop() {
         if (!running) return;
-        processFrame();
         raf = requestAnimationFrame(loop);
+        if (processing) return;
+        processing = true;
+        try {
+          processFrame();
+        } finally {
+          processing = false;
+        }
       }
 
       function stopStreamOnly() {
@@ -594,11 +624,28 @@
       function stopCamera() {
         running = false;
         starting = false;
+        processing = false;
         stopStreamOnly();
         setRunningUi(false);
         startBtn.disabled = false;
         startBtn.textContent = 'Start camera';
         toast('Stopped — tap Start camera');
+      }
+
+      function stabilizeTrack(mediaStream) {
+        var track = mediaStream.getVideoTracks()[0];
+        if (!track || !track.applyConstraints) return Promise.resolve();
+        // Prefer steady capture — reduce AF hunting / “refocus” feel on iPhone
+        return track.applyConstraints({
+          frameRate: { ideal: 30, max: 30 },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          advanced: [{ focusMode: 'manual' }]
+        }).catch(function () {
+          return track.applyConstraints({
+            frameRate: { ideal: 30, max: 30 }
+          }).catch(function () { /* ignore */ });
+        });
       }
 
       async function getStream() {
@@ -608,12 +655,16 @@
             video: {
               facingMode: { ideal: facingMode },
               width: { ideal: 1280 },
-              height: { ideal: 720 }
+              height: { ideal: 720 },
+              frameRate: { ideal: 30, max: 30 }
             }
           },
           {
             audio: false,
-            video: { facingMode: facingMode }
+            video: {
+              facingMode: facingMode,
+              frameRate: { ideal: 30, max: 30 }
+            }
           },
           {
             audio: false,
@@ -624,7 +675,9 @@
         var lastErr = null;
         for (var i = 0; i < attempts.length; i++) {
           try {
-            return await navigator.mediaDevices.getUserMedia(attempts[i]);
+            var mediaStream = await navigator.mediaDevices.getUserMedia(attempts[i]);
+            await stabilizeTrack(mediaStream);
+            return mediaStream;
           } catch (err) {
             lastErr = err;
           }
@@ -677,6 +730,10 @@
 
           running = true;
           starting = false;
+          processing = false;
+          adaptiveMaxW = 360;
+          lockedKey = '';
+          lastPixel = -1;
           syncFacingUi();
           setRunningUi(true);
           startBtn.textContent = 'Start camera';
