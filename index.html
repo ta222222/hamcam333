@@ -279,6 +279,81 @@
     .hidden {
       display: none !important;
     }
+
+    .fs-close {
+      display: none;
+      position: absolute;
+      top: max(10px, env(safe-area-inset-top));
+      right: max(10px, env(safe-area-inset-right));
+      z-index: 5;
+      width: 40px;
+      height: 40px;
+      padding: 0;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      color: var(--fg);
+      font: 700 18px/1 var(--font-mono);
+      cursor: pointer;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .fs-close:hover {
+      background: var(--surface-2);
+      border-color: var(--border-strong);
+    }
+
+    /* Immersive fullscreen — whole viewport camera (iOS-friendly) */
+    body.is-fullscreen {
+      overflow: hidden;
+      background: #000;
+    }
+
+    body.is-fullscreen .app {
+      max-width: none;
+      min-height: 100dvh;
+      height: 100dvh;
+      padding: 0;
+      gap: 0;
+    }
+
+    body.is-fullscreen .head-row,
+    body.is-fullscreen .toolbar,
+    body.is-fullscreen .panel,
+    body.is-fullscreen .status {
+      display: none !important;
+    }
+
+    body.is-fullscreen .stage {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      height: 100dvh;
+      min-height: 100dvh;
+      border: none;
+      border-radius: 0;
+      background: #000;
+      z-index: 1000;
+    }
+
+    body.is-fullscreen #view {
+      width: 100%;
+      height: 100%;
+      max-height: none;
+      object-fit: cover;
+    }
+
+    body.is-fullscreen .fs-close {
+      display: flex;
+    }
+
+    @media (orientation: landscape) {
+      body.is-fullscreen #view {
+        object-fit: cover;
+      }
+    }
   </style>
 </head>
 <body>
@@ -295,6 +370,7 @@
     </div>
 
     <div class="stage" id="stage">
+      <button type="button" class="fs-close" id="fs-close" aria-label="Exit fullscreen">×</button>
       <div class="idle" id="idle">
         <h2>Camera filter</h2>
         <p>Floyd–Steinberg dither over live camera. Prefer rear lens; flip for front.</p>
@@ -307,6 +383,7 @@
     <div class="toolbar">
       <button type="button" class="btn btn-primary" id="stop-btn" disabled>Stop</button>
       <button type="button" class="btn" id="flip-btn" disabled>Flip cam</button>
+      <button type="button" class="btn" id="fs-btn" disabled>Fullscreen</button>
       <button type="button" class="btn" id="snap-btn" disabled>Snap png</button>
       <button type="button" class="btn" id="reset-btn">Reset</button>
     </div>
@@ -367,6 +444,8 @@
     const flipBtn = document.getElementById('flip-btn');
     const snapBtn = document.getElementById('snap-btn');
     const resetBtn = document.getElementById('reset-btn');
+    const fsBtn = document.getElementById('fs-btn');
+    const fsCloseBtn = document.getElementById('fs-close');
     const presetEl = document.getElementById('preset');
     const pixelEl = document.getElementById('pixel');
     const thresholdEl = document.getElementById('threshold');
@@ -467,7 +546,33 @@
       stopBtn.disabled = !isOn;
       flipBtn.disabled = !isOn;
       snapBtn.disabled = !isOn;
+      fsBtn.disabled = !isOn;
       startBtn.disabled = isOn;
+      if (!isOn) exitFullscreen();
+    }
+
+    function isFullscreen() {
+      return document.body.classList.contains('is-fullscreen');
+    }
+
+    function enterFullscreen() {
+      if (!running) return;
+      document.body.classList.add('is-fullscreen');
+      fsBtn.textContent = 'Exit FS';
+      setStatus('Fullscreen · tap × to close');
+    }
+
+    function exitFullscreen() {
+      document.body.classList.remove('is-fullscreen');
+      fsBtn.textContent = 'Fullscreen';
+      if (running) {
+        setStatus('Live · ' + (facingMode === 'environment' ? 'rear' : 'front') + ' · adjust output below');
+      }
+    }
+
+    function toggleFullscreen() {
+      if (isFullscreen()) exitFullscreen();
+      else enterFullscreen();
     }
 
     async function startCamera() {
@@ -533,6 +638,7 @@
     }
 
     function stopCamera() {
+      exitFullscreen();
       stopStream();
       setRunningUi(false);
       setStatus('Stopped.');
@@ -611,6 +717,11 @@
     stopBtn.addEventListener('click', stopCamera);
     flipBtn.addEventListener('click', flipCamera);
     snapBtn.addEventListener('click', snap);
+    fsBtn.addEventListener('click', toggleFullscreen);
+    fsCloseBtn.addEventListener('click', exitFullscreen);
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && isFullscreen()) exitFullscreen();
+    });
     resetBtn.addEventListener('click', function () {
       presetEl.value = 'default';
       applySettings(presets.default);
