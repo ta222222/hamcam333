@@ -280,26 +280,40 @@
       display: none !important;
     }
 
-    .fs-close {
+    .fs-close,
+    .fs-flip {
       display: none;
       position: absolute;
       top: max(10px, env(safe-area-inset-top));
-      right: max(10px, env(safe-area-inset-right));
       z-index: 5;
-      width: 40px;
       height: 40px;
-      padding: 0;
+      padding: 0 12px;
       border: 1px solid var(--border);
       border-radius: var(--radius);
       background: var(--surface);
       color: var(--fg);
-      font: 700 18px/1 var(--font-mono);
+      font: 700 11px/1 var(--font-mono);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
       cursor: pointer;
       align-items: center;
       justify-content: center;
     }
 
-    .fs-close:hover {
+    .fs-close {
+      right: max(10px, env(safe-area-inset-right));
+      width: 40px;
+      padding: 0;
+      font-size: 18px;
+    }
+
+    .fs-flip {
+      left: max(10px, env(safe-area-inset-left));
+      min-width: 40px;
+    }
+
+    .fs-close:hover,
+    .fs-flip:hover {
       background: var(--surface-2);
       border-color: var(--border-strong);
     }
@@ -345,7 +359,8 @@
       object-fit: cover;
     }
 
-    body.is-fullscreen .fs-close {
+    body.is-fullscreen .fs-close,
+    body.is-fullscreen .fs-flip {
       display: flex;
     }
 
@@ -370,6 +385,7 @@
     </div>
 
     <div class="stage" id="stage">
+      <button type="button" class="fs-flip" id="fs-flip" aria-label="Flip camera">Flip</button>
       <button type="button" class="fs-close" id="fs-close" aria-label="Exit fullscreen">×</button>
       <div class="idle" id="idle">
         <h2>Camera filter</h2>
@@ -446,6 +462,7 @@
     const resetBtn = document.getElementById('reset-btn');
     const fsBtn = document.getElementById('fs-btn');
     const fsCloseBtn = document.getElementById('fs-close');
+    const fsFlipBtn = document.getElementById('fs-flip');
     const presetEl = document.getElementById('preset');
     const pixelEl = document.getElementById('pixel');
     const thresholdEl = document.getElementById('threshold');
@@ -719,6 +736,7 @@
     snapBtn.addEventListener('click', snap);
     fsBtn.addEventListener('click', toggleFullscreen);
     fsCloseBtn.addEventListener('click', exitFullscreen);
+    fsFlipBtn.addEventListener('click', flipCamera);
     document.addEventListener('keydown', function (e) {
       if (e.key === 'Escape' && isFullscreen()) exitFullscreen();
     });
