@@ -167,14 +167,47 @@
       bottom: var(--safe-b);
       left: var(--safe-l);
       right: var(--safe-r);
-      justify-content: space-between;
+      display: none;
       align-items: flex-end;
+      justify-content: space-between;
+      gap: 8px;
     }
 
+    body.is-live .hud-bottom {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+    }
+
+    .hud-bottom-left,
     .hud-bottom-right {
       display: flex;
       gap: 8px;
       align-items: center;
+    }
+
+    .hud-bottom-left {
+      justify-content: flex-start;
+    }
+
+    .hud-bottom-mid {
+      display: flex;
+      justify-content: center;
+    }
+
+    .hud-bottom-right {
+      justify-content: flex-end;
+    }
+
+    body.chrome-hidden .hud-chrome {
+      display: none !important;
+    }
+
+    body.chrome-hidden .overlay {
+      display: none !important;
+    }
+
+    body.chrome-hidden .hud-top {
+      justify-content: flex-end;
     }
 
     .hud-btn {
@@ -342,12 +375,18 @@
     </div>
 
     <div class="hud hud-top" id="hud-top">
-      <button type="button" class="hud-btn" id="flip-btn">Flip</button>
+      <button type="button" class="hud-btn hud-chrome" id="flip-btn">Flip</button>
       <button type="button" class="hud-btn icon" id="stop-btn" aria-label="Stop">×</button>
     </div>
 
-    <div class="hud hud-bottom" id="hud-bottom">
-      <button type="button" class="hud-btn primary" id="snap-btn">Save</button>
+    <div class="hud hud-bottom hud-chrome" id="hud-bottom">
+      <div class="hud-bottom-left">
+        <button type="button" class="hud-btn primary" id="snap-btn">Save</button>
+        <button type="button" class="hud-btn" id="snap-png-btn">Snap png</button>
+      </div>
+      <div class="hud-bottom-mid">
+        <button type="button" class="hud-btn" id="toggle-chrome" aria-label="Hide controls">Hide UI</button>
+      </div>
       <div class="hud-bottom-right">
         <span class="badge" id="facing-badge">rear</span>
         <button type="button" class="hud-btn" id="toggle-controls">Controls</button>
@@ -422,10 +461,14 @@
       var stopBtn = document.getElementById('stop-btn');
       var flipBtn = document.getElementById('flip-btn');
       var snapBtn = document.getElementById('snap-btn');
+      var snapPngBtn = document.getElementById('snap-png-btn');
       var snapBtn2 = document.getElementById('snap-btn-2');
       var resetBtn = document.getElementById('reset-btn');
       var toggleControlsBtn = document.getElementById('toggle-controls');
+      var toggleChromeBtn = document.getElementById('toggle-chrome');
       var hideControlsBtn = document.getElementById('hide-controls');
+      var stageEl = document.getElementById('stage');
+      var toastTimer = 0;
       var presetEl = document.getElementById('preset');
       var pixelEl = document.getElementById('pixel');
       var thresholdEl = document.getElementById('threshold');
@@ -469,8 +512,25 @@
       }
 
       function toast(msg, isError) {
+        if (toastTimer) {
+          clearTimeout(toastTimer);
+          toastTimer = 0;
+        }
         toastEl.textContent = msg || '';
         toastEl.classList.toggle('error', !!isError);
+      }
+
+      function toastTemp(msg, ms, isError) {
+        toast(msg, isError);
+        toastTimer = setTimeout(function () {
+          toastEl.textContent = '';
+          toastTimer = 0;
+        }, ms || 1400);
+      }
+
+      function setChromeHidden(hidden) {
+        document.body.classList.toggle('chrome-hidden', !!hidden);
+        if (hidden) setControlsOpen(false);
       }
 
       function applySettings(s) {
@@ -495,7 +555,10 @@
 
       function setRunningUi(isOn) {
         document.body.classList.toggle('is-live', isOn);
-        if (!isOn) setControlsOpen(false);
+        if (!isOn) {
+          setControlsOpen(false);
+          setChromeHidden(false);
+        }
       }
 
       // Fast FS on luminance buffer — same look, smoother on iPhone
@@ -737,7 +800,7 @@
           syncFacingUi();
           setRunningUi(true);
           startBtn.textContent = 'Start camera';
-          toast('Live · ' + (facingMode === 'environment' ? 'rear' : 'front') + ' · Controls for settings');
+          toastTemp('Live', 900);
           loop();
 
           if (!wasLive) setControlsOpen(false);
@@ -764,7 +827,7 @@
         if (!running || starting) return;
         facingMode = facingMode === 'environment' ? 'user' : 'environment';
         syncFacingUi();
-        toast('Switching to ' + (facingMode === 'environment' ? 'rear' : 'front') + '…');
+        toastTemp('Switching…', 900);
         await startCamera();
       }
 
@@ -859,6 +922,10 @@
         e.preventDefault();
         snap();
       });
+      snapPngBtn.addEventListener('click', function (e) {
+        e.preventDefault();
+        snap();
+      });
       snapBtn2.addEventListener('click', function (e) {
         e.preventDefault();
         snap();
@@ -867,20 +934,32 @@
         e.preventDefault();
         setControlsOpen(!document.body.classList.contains('controls-open'));
       });
+      toggleChromeBtn.addEventListener('click', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        setChromeHidden(true);
+        toastTemp('Tap screen to show UI', 1600);
+      });
       hideControlsBtn.addEventListener('click', function (e) {
         e.preventDefault();
         setControlsOpen(false);
+      });
+      stageEl.addEventListener('click', function (e) {
+        if (!document.body.classList.contains('chrome-hidden')) return;
+        if (e.target.closest('button, a, input, select, label, .overlay')) return;
+        setChromeHidden(false);
       });
       resetBtn.addEventListener('click', function (e) {
         e.preventDefault();
         presetEl.value = 'default';
         applySettings(presets.default);
-        toast('Reset to default');
+        toastTemp('Reset to default', 1200);
       });
 
       document.addEventListener('keydown', function (e) {
         if (e.key === 'Escape') {
-          if (document.body.classList.contains('controls-open')) setControlsOpen(false);
+          if (document.body.classList.contains('chrome-hidden')) setChromeHidden(false);
+          else if (document.body.classList.contains('controls-open')) setControlsOpen(false);
           else if (running) stopCamera();
         }
       });
