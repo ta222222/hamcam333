@@ -22,7 +22,738 @@
       --radius: 3px;
       --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
       --portal-text: 10px;
+      --portal-text-sm: 9px;<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>hammercam 3.0</title>
+  <style>
+    :root {
+      --bg: #0a0a0a;
+      --fg: #f5f5f5;
+      --surface: rgba(255, 255, 255, 0.12);
+      --surface-2: rgba(255, 255, 255, 0.2);
+      --border: rgba(255, 255, 255, 0.28);
+      --muted: rgba(255, 255, 255, 0.65);
+      --muted-light: rgba(255, 255, 255, 0.45);
+      --neon: #c8ff00;
+      --neon-dim: #b8eb00;
+      --neon-soft: color-mix(in srgb, var(--neon) 22%, transparent);
+      --radius: 3px;
+      --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+      --portal-text: 10px;
       --portal-text-sm: 9px;
+      --safe-t: max(12px, env(safe-area-inset-top));
+      --safe-r: max(12px, env(safe-area-inset-right));
+      --safe-b: max(12px, env(safe-area-inset-bottom));
+      --safe-l: max(12px, env(safe-area-inset-left));
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #000;
+      color: var(--fg);
+      font-family: var(--font-mono);
+      font-size: var(--portal-text);
+      -webkit-font-smoothing: antialiased;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+
+    .stage {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      height: 100dvh;
+      background: #111;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    #view {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      display: block;
+      background: #111;
+    }
+
+    #view.mirrored {
+      transform: scaleX(-1);
+    }
+
+    #video {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .idle {
+      position: relative;
+      z-index: 2;
+      text-align: center;
+      padding: 28px 20px;
+      max-width: 300px;
+      background: rgba(10, 10, 10, 0.55);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+
+    .idle h1 {
+      font: 700 12px/1.2 var(--font-mono);
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    .idle p {
+      font: var(--portal-text-sm)/1.5 var(--font-mono);
+      color: var(--muted);
+      margin-bottom: 16px;
+    }
+
+    .hud-btn {
+      position: absolute;
+      z-index: 6;
+      height: 40px;
+      padding: 0 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: rgba(20, 20, 20, 0.45);
+      color: var(--fg);
+      font: 700 11px/1 var(--font-mono);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      cursor: pointer;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+    }
+
+    .hud-btn:hover,
+    .hud-btn.active {
+      background: rgba(255, 255, 255, 0.22);
+      border-color: rgba(255, 255, 255, 0.45);
+    }
+
+    .hud-btn.primary {
+      background: color-mix(in srgb, var(--neon) 75%, transparent);
+      border-color: var(--neon-dim);
+      color: #0a0a0a;
+    }
+
+    .hud-btn.primary:hover {
+      background: var(--neon);
+    }
+
+    body.is-live .hud-btn {
+      display: flex;
+    }
+
+    #fs-flip {
+      top: var(--safe-t);
+      left: var(--safe-l);
+    }
+
+    #fs-controls {
+      top: var(--safe-t);
+      right: calc(var(--safe-r) + 48px);
+    }
+
+    #fs-close {
+      top: var(--safe-t);
+      right: var(--safe-r);
+      width: 40px;
+      padding: 0;
+      font-size: 18px;
+    }
+
+    #fs-snap {
+      bottom: var(--safe-b);
+      left: var(--safe-l);
+    }
+
+    .btn {
+      font: var(--portal-text)/1.2 var(--font-mono);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      min-height: 36px;
+      padding: 8px 16px;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      color: var(--fg);
+    }
+
+    .btn-primary {
+      background: var(--neon);
+      border-color: var(--neon-dim);
+      color: #0a0a0a;
+    }
+
+    .overlay {
+      position: absolute;
+      z-index: 5;
+      left: var(--safe-l);
+      right: var(--safe-r);
+      bottom: calc(var(--safe-b) + 52px);
+      max-width: 420px;
+      margin: 0 auto;
+      padding: 14px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: rgba(12, 12, 12, 0.55);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      display: none;
+      flex-direction: column;
+      gap: 10px;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+      max-height: min(55dvh, 420px);
+      overflow: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    body.controls-open .overlay {
+      display: flex;
+    }
+
+    body.controls-open #fs-controls {
+      background: color-mix(in srgb, var(--neon) 55%, transparent);
+      border-color: var(--neon-dim);
+      color: #0a0a0a;
+    }
+
+    .overlay-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .rail-label {
+      font: var(--portal-text-sm)/1 var(--font-mono);
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--muted-light);
+    }
+
+    .badge {
+      font: 9px/1 var(--font-mono);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      padding: 5px 8px;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    .overlay-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .overlay-actions .btn {
+      min-height: 30px;
+      padding: 6px 10px;
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .overlay-actions .btn-primary {
+      background: var(--neon);
+      color: #0a0a0a;
+    }
+
+    .ctrl {
+      display: grid;
+      grid-template-columns: 5.5rem 1fr 2.6rem;
+      align-items: center;
+      gap: 0.55rem;
+    }
+
+    .ctrl label {
+      font: var(--portal-text-sm)/1 var(--font-mono);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted-light);
+    }
+
+    .ctrl output {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      color: var(--fg);
+      font-size: var(--portal-text-sm);
+    }
+
+    .ctrl input[type="range"] {
+      width: 100%;
+      accent-color: var(--neon-dim);
+    }
+
+    .ctrl select {
+      width: 100%;
+      padding: 6px 8px;
+      background: rgba(0, 0, 0, 0.35);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--fg);
+      font: var(--portal-text)/1.3 var(--font-mono);
+    }
+
+    .status {
+      min-height: 1.2em;
+      color: var(--muted);
+      font: var(--portal-text-sm)/1.4 var(--font-mono);
+    }
+
+    .status.error {
+      color: #ff7b7b;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+  </style>
+</head>
+<body>
+  <div class="stage" id="stage">
+    <button type="button" class="hud-btn" id="fs-flip" aria-label="Flip camera">Flip</button>
+    <button type="button" class="hud-btn" id="fs-controls" aria-label="Toggle controls" aria-expanded="false">Ctrl</button>
+    <button type="button" class="hud-btn" id="fs-close" aria-label="Stop camera">×</button>
+    <button type="button" class="hud-btn primary" id="fs-snap" aria-label="Save PNG">Save</button>
+
+    <div class="idle" id="idle">
+      <h1>hammercam 3.0</h1>
+      <p>Fullscreen dither camera. Tap start, then Ctrl for settings.</p>
+      <button type="button" class="btn btn-primary" id="start-btn">Start</button>
+    </div>
+
+    <video id="video" playsinline muted autoplay></video>
+    <canvas id="view" class="hidden" aria-label="dithered camera"></canvas>
+
+    <div class="overlay" id="overlay" aria-hidden="true">
+      <div class="overlay-head">
+        <p class="rail-label">Output</p>
+        <span class="badge" id="facing-badge">rear</span>
+      </div>
+
+      <div class="overlay-actions">
+        <button type="button" class="btn" id="flip-btn" disabled>Flip</button>
+        <button type="button" class="btn primary btn-primary" id="snap-btn" disabled>Snap</button>
+        <button type="button" class="btn" id="reset-btn">Reset</button>
+        <button type="button" class="btn" id="stop-btn" disabled>Stop</button>
+      </div>
+
+      <div class="ctrl">
+        <label for="preset">Preset</label>
+        <select id="preset">
+          <option value="">—</option>
+          <option value="default">Default</option>
+          <option value="v1">V1 G00D</option>
+          <option value="soft">Soft</option>
+          <option value="hard">Hard</option>
+          <option value="test4444">test4444</option>
+        </select>
+        <span></span>
+      </div>
+      <div class="ctrl">
+        <label for="pixel">Pixel</label>
+        <input type="range" id="pixel" min="0.2" max="3" step="0.01" value="0.75">
+        <output id="pixel-val" for="pixel">0.75</output>
+      </div>
+      <div class="ctrl">
+        <label for="threshold">Threshold</label>
+        <input type="range" id="threshold" min="40" max="215" step="1" value="128">
+        <output id="threshold-val" for="threshold">128</output>
+      </div>
+      <div class="ctrl">
+        <label for="contrast">Contrast</label>
+        <input type="range" id="contrast" min="0.5" max="3" step="0.05" value="1.2">
+        <output id="contrast-val" for="contrast">1.20</output>
+      </div>
+      <div class="ctrl">
+        <label for="strength">Strength</label>
+        <input type="range" id="strength" min="0" max="2" step="0.05" value="1">
+        <output id="strength-val" for="strength">1.00</output>
+      </div>
+
+      <p class="status" id="status">Ready — tap Start for camera access.</p>
+    </div>
+  </div>
+
+  <script>
+    const presets = {
+      default: { pixel: 0.75, threshold: 128, contrast: 1.2, strength: 1 },
+      v1: { pixel: 0.35, threshold: 40, contrast: 2.25, strength: 0.65 },
+      soft: { pixel: 1.25, threshold: 140, contrast: 0.9, strength: 0.75 },
+      hard: { pixel: 0.9, threshold: 100, contrast: 2.0, strength: 1.25 },
+      test4444: { pixel: 0.22, threshold: 44, contrast: 1.55, strength: 0.11 }
+    };
+
+    const video = document.getElementById('video');
+    const view = document.getElementById('view');
+    const idle = document.getElementById('idle');
+    const overlay = document.getElementById('overlay');
+    const statusEl = document.getElementById('status');
+    const facingBadge = document.getElementById('facing-badge');
+    const startBtn = document.getElementById('start-btn');
+    const stopBtn = document.getElementById('stop-btn');
+    const flipBtn = document.getElementById('flip-btn');
+    const snapBtn = document.getElementById('snap-btn');
+    const resetBtn = document.getElementById('reset-btn');
+    const fsCloseBtn = document.getElementById('fs-close');
+    const fsFlipBtn = document.getElementById('fs-flip');
+    const fsSnapBtn = document.getElementById('fs-snap');
+    const fsControlsBtn = document.getElementById('fs-controls');
+    const presetEl = document.getElementById('preset');
+    const pixelEl = document.getElementById('pixel');
+    const thresholdEl = document.getElementById('threshold');
+    const contrastEl = document.getElementById('contrast');
+    const strengthEl = document.getElementById('strength');
+    const pixelVal = document.getElementById('pixel-val');
+    const thresholdVal = document.getElementById('threshold-val');
+    const contrastVal = document.getElementById('contrast-val');
+    const strengthVal = document.getElementById('strength-val');
+
+    const work = document.createElement('canvas');
+    const wctx = work.getContext('2d', { willReadFrequently: true });
+    const vctx = view.getContext('2d');
+
+    let stream = null;
+    let facingMode = 'environment';
+    let running = false;
+    let raf = 0;
+
+    function settings() {
+      return {
+        pixel: +pixelEl.value,
+        threshold: +thresholdEl.value,
+        contrast: +contrastEl.value,
+        strength: +strengthEl.value
+      };
+    }
+
+    function syncLabels() {
+      const s = settings();
+      pixelVal.textContent = s.pixel.toFixed(2);
+      thresholdVal.textContent = s.threshold;
+      contrastVal.textContent = s.contrast.toFixed(2);
+      strengthVal.textContent = s.strength.toFixed(2);
+    }
+
+    function setStatus(msg, isError) {
+      statusEl.textContent = msg;
+      statusEl.classList.toggle('error', !!isError);
+    }
+
+    function applySettings(s) {
+      pixelEl.value = s.pixel;
+      thresholdEl.value = s.threshold;
+      contrastEl.value = s.contrast;
+      strengthEl.value = s.strength;
+      syncLabels();
+    }
+
+    function ditherImageOnCanvas(ctx, width, height, opts) {
+      const threshold = opts.threshold;
+      const contrast = opts.contrast;
+      const strength = opts.strength;
+      const imageData = ctx.getImageData(0, 0, width, height);
+      const data = imageData.data;
+      const mid = 128;
+
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const idx = (y * width + x) * 4;
+          let oldPixel = data[idx] * 0.299 + data[idx + 1] * 0.587 + data[idx + 2] * 0.114;
+          oldPixel = (oldPixel - mid) * contrast + mid;
+          oldPixel = oldPixel < 0 ? 0 : oldPixel > 255 ? 255 : oldPixel;
+          const newPixel = oldPixel < threshold ? 0 : 255;
+          const error = (oldPixel - newPixel) * strength;
+          data[idx] = data[idx + 1] = data[idx + 2] = newPixel;
+
+          function distribute(dx, dy, factor) {
+            const nx = x + dx;
+            const ny = y + dy;
+            if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+              const nidx = (ny * width + nx) * 4;
+              let n = data[nidx] * 0.299 + data[nidx + 1] * 0.587 + data[nidx + 2] * 0.114 + error * factor;
+              n = n < 0 ? 0 : n > 255 ? 255 : n;
+              data[nidx] = data[nidx + 1] = data[nidx + 2] = n;
+            }
+          }
+
+          distribute(1, 0, 7 / 16);
+          distribute(-1, 1, 3 / 16);
+          distribute(0, 1, 5 / 16);
+          distribute(1, 1, 1 / 16);
+        }
+      }
+
+      ctx.putImageData(imageData, 0, 0);
+    }
+
+    function syncFacingUi() {
+      const rear = facingMode === 'environment';
+      facingBadge.textContent = rear ? 'rear' : 'front';
+      view.classList.toggle('mirrored', !rear);
+    }
+
+    function setControlsOpen(open) {
+      document.body.classList.toggle('controls-open', open);
+      fsControlsBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      overlay.setAttribute('aria-hidden', open ? 'false' : 'true');
+    }
+
+    function toggleControls() {
+      setControlsOpen(!document.body.classList.contains('controls-open'));
+    }
+
+    function setRunningUi(isOn) {
+      document.body.classList.toggle('is-live', isOn);
+      idle.classList.toggle('hidden', isOn);
+      view.classList.toggle('hidden', !isOn);
+      stopBtn.disabled = !isOn;
+      flipBtn.disabled = !isOn;
+      snapBtn.disabled = !isOn;
+      startBtn.disabled = isOn;
+      if (!isOn) setControlsOpen(false);
+    }
+
+    async function startCamera() {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setControlsOpen(true);
+        setStatus('Camera API unavailable in this browser.', true);
+        return;
+      }
+
+      stopStream();
+      setStatus('Requesting camera…');
+
+      const constraints = {
+        audio: false,
+        video: {
+          facingMode: { ideal: facingMode },
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        }
+      };
+
+      try {
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+      } catch (err) {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: false,
+            video: true
+          });
+        } catch (err2) {
+          setControlsOpen(true);
+          setStatus('Camera permission denied or unavailable.', true);
+          setRunningUi(false);
+          return;
+        }
+      }
+
+      video.srcObject = stream;
+      try {
+        await video.play();
+      } catch (e) {
+        setControlsOpen(true);
+        setStatus('Could not play camera stream.', true);
+        stopStream();
+        return;
+      }
+
+      running = true;
+      syncFacingUi();
+      setRunningUi(true);
+      setStatus('Live · tap Ctrl for settings');
+      loop();
+    }
+
+    function stopStream() {
+      running = false;
+      if (raf) {
+        cancelAnimationFrame(raf);
+        raf = 0;
+      }
+      if (stream) {
+        stream.getTracks().forEach(function (t) { t.stop(); });
+        stream = null;
+      }
+      video.srcObject = null;
+    }
+
+    function stopCamera() {
+      stopStream();
+      setRunningUi(false);
+      setStatus('Stopped — tap Start to resume.');
+    }
+
+    async function flipCamera() {
+      facingMode = facingMode === 'environment' ? 'user' : 'environment';
+      syncFacingUi();
+      if (running) await startCamera();
+    }
+
+    function processFrame() {
+      if (!running || video.readyState < 2) return;
+
+      const s = settings();
+      const scale = Math.max(0.2, s.pixel);
+      const vw = video.videoWidth || 640;
+      const vh = video.videoHeight || 480;
+
+      const maxW = 520;
+      const w = Math.min(maxW, Math.max(1, Math.round(vw / scale)));
+      const h = Math.max(1, Math.round(vh * (w / vw)));
+
+      if (work.width !== w || work.height !== h) {
+        work.width = w;
+        work.height = h;
+      }
+
+      const chunk = Math.max(1, Math.round(scale));
+      const outW = w * chunk;
+      const outH = h * chunk;
+      if (view.width !== outW || view.height !== outH) {
+        view.width = outW;
+        view.height = outH;
+      }
+
+      wctx.imageSmoothingEnabled = false;
+      wctx.drawImage(video, 0, 0, w, h);
+      ditherImageOnCanvas(wctx, w, h, s);
+
+      vctx.imageSmoothingEnabled = false;
+      vctx.clearRect(0, 0, outW, outH);
+      vctx.drawImage(work, 0, 0, outW, outH);
+    }
+
+    function loop() {
+      if (!running) return;
+      processFrame();
+      raf = requestAnimationFrame(loop);
+    }
+
+    function downloadPng(url, filename) {
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.rel = 'noopener';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+
+    function canvasToBlob(canvas) {
+      return new Promise(function (resolve, reject) {
+        canvas.toBlob(function (blob) {
+          if (blob) resolve(blob);
+          else reject(new Error('Could not encode PNG'));
+        }, 'image/png');
+      });
+    }
+
+    async function snap() {
+      if (!running || !view.width) return;
+
+      const filename = 'hammercam-' + Date.now() + '.png';
+
+      try {
+        const blob = await canvasToBlob(view);
+        const file = new File([blob], filename, { type: 'image/png' });
+
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          try {
+            await navigator.share({
+              files: [file],
+              title: 'hammercam'
+            });
+            setStatus('Saved');
+            return;
+          } catch (shareErr) {
+            if (shareErr && shareErr.name === 'AbortError') {
+              setStatus('Save cancelled');
+              return;
+            }
+          }
+        }
+
+        const url = URL.createObjectURL(blob);
+        downloadPng(url, filename);
+        setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+        setStatus('Saved ' + filename);
+      } catch (err) {
+        downloadPng(view.toDataURL('image/png'), filename);
+        setStatus('Saved ' + filename);
+      }
+    }
+
+    [pixelEl, thresholdEl, contrastEl, strengthEl].forEach(function (el) {
+      el.addEventListener('input', function () {
+        presetEl.value = '';
+        syncLabels();
+      });
+    });
+
+    presetEl.addEventListener('change', function () {
+      const key = presetEl.value;
+      if (key && presets[key]) applySettings(presets[key]);
+    });
+
+    startBtn.addEventListener('click', startCamera);
+    stopBtn.addEventListener('click', stopCamera);
+    flipBtn.addEventListener('click', flipCamera);
+    snapBtn.addEventListener('click', snap);
+    fsCloseBtn.addEventListener('click', stopCamera);
+    fsFlipBtn.addEventListener('click', flipCamera);
+    fsSnapBtn.addEventListener('click', snap);
+    fsControlsBtn.addEventListener('click', toggleControls);
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') {
+        if (document.body.classList.contains('controls-open')) setControlsOpen(false);
+        else if (running) stopCamera();
+      }
+    });
+    resetBtn.addEventListener('click', function () {
+      presetEl.value = 'default';
+      applySettings(presets.default);
+      setStatus(running ? 'Reset to default.' : 'Ready — tap Start for camera access.');
+    });
+
+    applySettings(presets.default);
+    presetEl.value = 'default';
+    setRunningUi(false);
+    setControlsOpen(false);
+  </script>
+</body>
+</html>
+
     }
 
     *, *::before, *::after {
